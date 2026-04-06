@@ -19,6 +19,7 @@ dependencies = [
     # install from github
     # "openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git",
     "openenv-core[core]>=0.2.1",
+    "python-dotenv>=1.0.0",
     # Environment-specific dependencies
     # Add all dependencies needed for your environment here
     # Examples:
@@ -44,3 +45,6 @@ server = "job_scam_env.server.app:main"
 include-package-data = true
 packages = ["job_scam_env", "job_scam_env.server"]
 package-dir = { "job_scam_env" = ".", "job_scam_env.server" = "server" }
+
+[tool.setuptools.package-data]
+"job_scam_env.server" = ["data_task_medium.jsonl"]

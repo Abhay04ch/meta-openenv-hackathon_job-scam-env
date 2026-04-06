@@ -1,255 +1,212 @@
 ---
-title: Job Scam Env Environment Server
-emoji: 🥁
-colorFrom: red
-colorTo: blue
+title: Job Scam Detection Environment
+emoji: 🧠
+colorFrom: indigo
+colorTo: purple
 sdk: docker
-pinned: false
-app_port: 8000
-base_path: /web
-tags:
-  - openenv
+app_port: 7860
 ---
 
-# Job Scam Env Environment
+# Job Scam Detection Environment
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+An OpenEnv-compatible RL environment for training and evaluating agents on job-scam detection.
 
-## Quick Start
+Each episode presents a real-world job opportunity (WhatsApp message, email, Telegram post, or job board post). The agent investigates by requesting hidden context fields and then submits a classification label. All grading and reward computation is fully programmatic — no LLM is involved in the environment itself.
 
-The simplest way to use the Job Scam Env environment is through the `JobScamEnv` class:
+---
 
-```python
-from job_scam_env import JobScamAction, JobScamEnv
-
-try:
-    # Create environment from Docker image
-    job_scam_envenv = JobScamEnv.from_docker_image("job_scam_env-env:latest")
-
-    # Reset
-    result = job_scam_envenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
-
-    for msg in messages:
-        result = job_scam_envenv.step(JobScamAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
-
-finally:
-    # Always clean up
-    job_scam_envenv.close()
-```
-
-That's it! The `JobScamEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
-
-## Building the Docker Image
-
-Before using the environment, you need to build the Docker image:
+## Quick start
 
 ```bash
-# From project root
-docker build -t job_scam_env-env:latest -f server/Dockerfile .
+# Install dependencies
+uv sync
+
+# Start the environment server
+uv run server
+
+# In a second terminal, run the inference agent
+export HF_TOKEN=<your_token>
+export MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
+export API_BASE_URL=https://router.huggingface.co/v1
+python inference.py
 ```
 
-## Deploying to Hugging Face Spaces
-
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
+Or with Docker:
 
 ```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
-
-# Or specify options
-openenv push --namespace my-org --private
+docker build -t job_scam_env-env:latest .
+python inference.py   # connects via from_docker_image()
 ```
 
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
+---
 
-### Prerequisites
+## Episode structure
 
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
+```
+reset()
+  └─ Observation: query_type, initial_query, available_context, step_budget
 
-### Options
+step(request_<field>)           × 0–4 times
+  └─ Observation: field_content, step_budget
+     Reward: signal_reward | redundancy_penalty | irrelevant_field_penalty
 
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
+step(classify(label))           exactly once, terminal
+  └─ Observation: predicted_label, actual_label, step_budget
+     Reward: classification_reward + total_steps_taken_reward
+     done: true
 
-### Examples
+── OR ──
 
-```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
+step budget exhausted without classify → timeout
+  └─ Reward: −1.5,  done: true
 ```
 
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
+Maximum steps per episode: **5** (4 info requests + 1 classify, or fewer).
 
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
+---
 
-## Environment Details
+## Action space
 
-### Action
-**JobScamAction**: Contains a single field
-- `message` (str) - The message to echo back
+| Action | Description |
+|---|---|
+| `request_recruiter_profile` | Fetch recruiter name, contact, and bio |
+| `request_company_profile` | Fetch company domain, hiring policy, anti-scam statements |
+| `request_thread_history` | Fetch prior message thread between sender and candidate |
+| `request_job_post_comments` | Fetch public comments or forwarded warnings |
+| `classify(label)` | Submit final verdict — **terminates the episode** |
 
-### Observation
-**JobScamObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
+Valid labels: `legit` · `suspicious` · `scam` · `insufficient_info`
 
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
+---
 
-## Advanced Usage
+## Reward structure
 
-### Connecting to an Existing Server
+### Per-step information reward
 
-If you already have a Job Scam Env environment server running, you can connect directly:
+```
+signal_score(field) = (|red_categories| + |green_categories|) /
+                      total_unique_categories_in_sample
+```
+
+| Condition | Reward |
+|---|---|
+| Valid, non-redundant field (signal > 0) | `+0.10 × signal_score` |
+| Field already requested this episode | `−0.20` |
+| Field has zero signal (empty / N/A) | `−0.10` |
+
+---
+
+### Terminal classification reward
+
+```
+classification_reward   = REWARD_MATRIX[predicted][ground_truth]
+alpha                   = +0.1  if correct  else  −0.1
+total_steps_taken_reward = alpha × remaining_steps_at_classification
+terminal_reward          = classification_reward + total_steps_taken_reward
+```
+
+Classification reward matrix (`REWARD_MATRIX[predicted][gt]`):
+
+|  | gt: legit | gt: suspicious | gt: scam | gt: insuf |
+|---|---|---|---|---|
+| **pred: legit** | +1.00 | −0.30 | −1.00 | −0.20 |
+| **pred: suspicious** | −0.10 | +1.00 | −0.30 | −0.10 |
+| **pred: scam** | −0.50 | −0.10 | +1.00 | −0.30 |
+| **pred: insuf** | −0.20 | −0.20 | −0.50 | +1.00 |
+
+The asymmetric penalties reflect real-world stakes: calling a scam `legit` is maximally penalised at −1.00.
+
+---
+
+### Timeout
+
+If the agent exhausts all 5 steps without classifying:
+
+```
+timeout_penalty = −1.5
+```
+
+---
+
+## Observation contract
+
+The client never receives: ground truth label, field signal scores, red/green flag categories, or internal reward equations.
 
 ```python
-from job_scam_env import JobScamEnv
+# Reset observation
+obs.query_type          # str
+obs.initial_query       # str
+obs.available_context   # List[str]
+obs.step_budget         # {"total": 5, "used": 0, "remaining": 5}
 
-# Connect to existing server
-job_scam_envenv = JobScamEnv(base_url="<ENV_HTTP_URL_HERE>")
+# Info request observation
+obs.requested_field     # str
+obs.field_content       # str
+obs.step_budget         # updated budget
 
-# Use as normal
-result = job_scam_envenv.reset()
-result = job_scam_envenv.step(JobScamAction(message="Hello!"))
+# Terminal (classification)
+obs.predicted_label     # str
+obs.actual_label        # str
+obs.step_budget         # final budget
+
+# Terminal (timeout)
+obs.episode_done        # True
+obs.reason              # "timeout"
+
+# All steps — reward breakdown in metadata
+obs.metadata["info"]["reward_breakdown"]   # dict
+obs.metadata["info"]["cumulative"]         # dict
 ```
 
-Note: When connecting to an existing server, `job_scam_envenv.close()` will NOT stop the server.
+---
 
-### Using the Context Manager
+## Dataset
 
-The client supports context manager usage for automatic connection management:
+Four built-in samples cover all four query types and all four GT labels:
 
-```python
-from job_scam_env import JobScamAction, JobScamEnv
+| sample_id | query_type | ground_truth |
+|---|---|---|
+| job_001 | job_post | legit |
+| job_002 | email | suspicious |
+| job_003 | whatsapp_msg | scam |
+| job_004 | telegram_msg | insufficient_info |
 
-# Connect with context manager (auto-connects and closes)
-with JobScamEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(JobScamAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
+The dataset is embedded directly in `server/job_scam_env_environment.py`.
+
+Each sample contains:
+- `red_flag_categories`
+- `green_flag_categories`
+
+These are used internally to compute signal scores and are never exposed to the agent.
+
+To extend the dataset, add entries to the `_DATASET` list in:
+```
+server/job_scam_env_environment.py
 ```
 
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
+---
 
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    JobScamEnvironment,  # Pass class, not instance
-    JobScamAction,
-    JobScamObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from job_scam_env import JobScamAction, JobScamEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with JobScamEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(JobScamAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/job_scam_env_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
-
-## Project Structure
+## Project structure
 
 ```
 job_scam_env/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # JobScamEnv client
-├── models.py              # Action and Observation models
-└── server/
-    ├── __init__.py        # Server module exports
-    ├── job_scam_env_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
+├── server/
+│   ├── app.py
+│   └── job_scam_env_environment.py
+├── client.py
+├── models.py
+├── inference.py
+├── Dockerfile
+├── openenv.yaml
+└── pyproject.toml
 ```
+
+---
+
+## Environment variables (inference)
+
+| Variable | Description |
+|---|---|
+| `API_BASE_URL` | OpenAI-compatible API endpoint |
+| `MODEL_NAME` | Model identifier |
+| `HF_TOKEN` / `API_KEY` | Authentication key |

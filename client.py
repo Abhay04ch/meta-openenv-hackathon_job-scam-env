@@ -1,80 +1,124 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""
+Job Scam Detection Environment — typed client.
 
-"""Job Scam Env Environment Client."""
+Wraps the OpenEnv ``EnvClient`` base class with concrete serialisation
+and deserialisation logic for ``JobScamAction`` and ``JobScamObservation``.
 
-from typing import Dict
+Usage
+-----
+::
+
+    from client import JobScamEnv
+    from models import ActionType, ClassificationLabel, JobScamAction
+
+    with JobScamEnv(base_url="http://localhost:8000") as env:
+        # Start a new episode
+        result = env.reset()
+        obs = result.observation
+        print(obs.query_type, obs.initial_query)
+
+        # Request a context field
+        result = env.step(JobScamAction(action_type=ActionType.REQUEST_COMPANY_PROFILE))
+        print(result.observation.field_content)
+        print("Step reward:", result.reward)
+        print("Info:", result.observation.metadata.get("info"))
+
+        # Classify
+        result = env.step(
+            JobScamAction(
+                action_type=ActionType.CLASSIFY,
+                label=ClassificationLabel.SCAM,
+            )
+        )
+        print("Done:", result.done)
+        print("Episode reward:", result.reward)
+
+Docker usage
+------------
+::
+
+    client = JobScamEnv.from_docker_image("job_scam_env-env:latest")
+    try:
+        result = client.reset()
+        result = client.step(JobScamAction(action_type="request_company_profile"))
+    finally:
+        client.close()
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
 
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import JobScamAction, JobScamObservation
+try:
+    from .models import ActionType, JobScamAction, JobScamObservation
+except ImportError:
+    from models import ActionType, JobScamAction, JobScamObservation
 
 
-class JobScamEnv(
-    EnvClient[JobScamAction, JobScamObservation, State]
-):
+class JobScamEnv(EnvClient[JobScamAction, JobScamObservation, State]):
     """
-    Client for the Job Scam Env Environment.
+    Typed client for the Job Scam Detection Environment.
 
-    This client maintains a persistent WebSocket connection to the environment server,
-    enabling efficient multi-step interactions with lower latency.
-    Each client instance has its own dedicated environment session on the server.
-
-    Example:
-        >>> # Connect to a running server
-        >>> with JobScamEnv(base_url="http://localhost:8000") as client:
-        ...     result = client.reset()
-        ...     print(result.observation.echoed_message)
-        ...
-        ...     result = client.step(JobScamAction(message="Hello!"))
-        ...     print(result.observation.echoed_message)
-
-    Example with Docker:
-        >>> # Automatically start container and connect
-        >>> client = JobScamEnv.from_docker_image("job_scam_env-env:latest")
-        >>> try:
-        ...     result = client.reset()
-        ...     result = client.step(JobScamAction(message="Test"))
-        ... finally:
-        ...     client.close()
+    Maintains a persistent WebSocket connection to the environment server
+    so that each ``step()`` call incurs minimal latency.  Every client
+    instance gets its own isolated environment session on the server.
     """
 
-    def _step_payload(self, action: JobScamAction) -> Dict:
+    # ------------------------------------------------------------------ wire
+
+    def _step_payload(self, action: JobScamAction) -> Dict[str, Any]:
         """
-        Convert JobScamAction to JSON payload for step message.
+        Serialise a ``JobScamAction`` to a JSON-safe dict for transmission.
 
-        Args:
-            action: JobScamAction instance
-
-        Returns:
-            Dictionary representation suitable for JSON encoding
+        The server deserialises this back into a ``JobScamAction`` instance.
         """
-        return {
-            "message": action.message,
-        }
+        payload: Dict[str, Any] = {"action_type": action.action_type.value}
+        if action.label is not None:
+            payload["label"] = action.label.value
+        return payload
 
-    def _parse_result(self, payload: Dict) -> StepResult[JobScamObservation]:
+    def _parse_result(self, payload: Dict[str, Any]) -> StepResult[JobScamObservation]:
         """
-        Parse server response into StepResult[JobScamObservation].
+        Deserialise the server response into a typed ``StepResult``.
 
-        Args:
-            payload: JSON response data from server
+        The server sends::
 
-        Returns:
-            StepResult with JobScamObservation
+            {
+                "observation": { ...JobScamObservation fields... },
+                "reward": float,
+                "done": bool
+            }
+
+        ``metadata`` (containing ``info.reward_breakdown`` and
+        ``info.cumulative``) lives inside the ``observation`` sub-object.
         """
-        obs_data = payload.get("observation", {})
+        obs_raw = payload.get("observation", {})
+
         observation = JobScamObservation(
-            echoed_message=obs_data.get("echoed_message", ""),
-            message_length=obs_data.get("message_length", 0),
+            # ── Reset fields ─────────────────────────────────────────────────
+            query_type=obs_raw.get("query_type"),
+            initial_query=obs_raw.get("initial_query"),
+            available_context=obs_raw.get("available_context"),
+            # ── Shared budget ─────────────────────────────────────────────────
+            step_budget=obs_raw.get("step_budget"),
+            # ── Info request fields ───────────────────────────────────────────
+            requested_field=obs_raw.get("requested_field"),
+            field_content=obs_raw.get("field_content"),
+            # ── Terminal classification fields ────────────────────────────────
+            predicted_label=obs_raw.get("predicted_label"),
+            actual_label=obs_raw.get("actual_label"),
+            # ── Timeout fields ────────────────────────────────────────────────
+            episode_done=obs_raw.get("episode_done"),
+            reason=obs_raw.get("reason"),
+            # ── OpenEnv base fields ───────────────────────────────────────────
             done=payload.get("done", False),
             reward=payload.get("reward"),
-            metadata=obs_data.get("metadata", {}),
+            # metadata=obs_raw.get("metadata", {}),
+            info=obs_raw.get("info", {}),
         )
 
         return StepResult(
@@ -83,16 +127,8 @@ class JobScamEnv(
             done=payload.get("done", False),
         )
 
-    def _parse_state(self, payload: Dict) -> State:
-        """
-        Parse server response into State object.
-
-        Args:
-            payload: JSON response from state request
-
-        Returns:
-            State object with episode_id and step_count
-        """
+    def _parse_state(self, payload: Dict[str, Any]) -> State:
+        """Deserialise the server's ``/state`` response into a ``State`` object."""
         return State(
             episode_id=payload.get("episode_id"),
             step_count=payload.get("step_count", 0),
