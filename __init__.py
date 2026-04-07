@@ -7,10 +7,17 @@
 """Job Scam Env Environment."""
 
 from .client import JobScamEnv
-from .models import JobScamAction, JobScamObservation
+from .models import JobScamAction, JobScamObservation, ActionType, ClassificationLabel
+from .constants import VALID_TASK_NAMES
 
 __all__ = [
+    # Client
+    "JobScamEnv",
+    # Unified models (superset across easy / medium / hard tasks)
     "JobScamAction",
     "JobScamObservation",
-    "JobScamEnv",
+    "ActionType",
+    "ClassificationLabel",
+    # Task registry
+    "VALID_TASK_NAMES",
 ]

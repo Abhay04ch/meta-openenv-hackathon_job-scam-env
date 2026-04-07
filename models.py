@@ -1,9 +1,29 @@
 """
 Data models for the Job Scam Detection Environment.
 
-Defines the action and observation types used by both the environment
-server and the client. All types are OpenEnv spec compliant and extend
-the base Action / Observation classes from openenv.core.
+Design rationale
+----------------
+OpenEnv's ``create_app`` accepts exactly **one** Action class and **one**
+Observation class.  To support three task variants (easy / medium / hard)
+without forking the server, we use a **unified superset** approach:
+
+* ``JobScamAction``       — one class; its ``action_type`` enum is the union
+                            of every action from all three tasks.  Only the
+                            action types that are valid for the *current
+                            episode's task* will be accepted by the server.
+* ``JobScamObservation``  — one class with every possible field across all
+                            tasks declared as ``Optional``.  Fields that are
+                            irrelevant to the current task are simply ``None``.
+
+Task-specific enumerations are grouped with comments so it is easy to extend
+them when the easy / hard task designs are finalised.
+
+Adding a new task
+-----------------
+1. Add new ``ActionType`` members in the "HARD TASK" / "EASY TASK" blocks.
+2. Add new ``ClassificationLabel`` members if the label space differs.
+3. Add new Optional fields to ``JobScamObservation`` in the appropriate block.
+4. Wire the new values into ``constants.py`` and the environment.
 """
 
 from __future__ import annotations
@@ -16,54 +36,83 @@ from pydantic import Field, model_validator
 
 
 # ---------------------------------------------------------------------------
-# Enumerations
+# Enumerations — unified superset across all tasks
 # ---------------------------------------------------------------------------
-
 class ActionType(str, Enum):
-    """All valid action types the client may submit."""
-
+    """
+    All valid action types across every task variant.
+    """
+    # ── MEDIUM TASK ─────────────────────────
+    CLASSIFY = "classify"
     REQUEST_RECRUITER_PROFILE = "request_recruiter_profile"
     REQUEST_COMPANY_PROFILE   = "request_company_profile"
     REQUEST_THREAD_HISTORY    = "request_thread_history"
     REQUEST_JOB_POST_COMMENTS = "request_job_post_comments"
-    CLASSIFY                  = "classify"
+
+    # ── EASY TASK ────────────
+    # TODO: uncomment / add when easy task is designed
+    # REQUEST_EASY_FIELD_A = "request_easy_field_a"
+
+    # ── HARD TASK ────────────
+    # TODO: uncomment / add when hard task is designed
+    # REQUEST_HARD_FIELD_A = "request_hard_field_a"
+    # REQUEST_HARD_FIELD_B = "request_hard_field_b"
 
 
 class ClassificationLabel(str, Enum):
-    """Four mutually exclusive classification outcomes."""
+    """
+    All valid classification outcomes across every task variant.
 
+    Right now the label space is identical for easy / medium / hard.
+    If a task variant needs additional labels, add them here with a comment
+    indicating which task introduced them.
+    """
+    # ── MEDIUM TASK labels (placeholders) ─────────────────────────────────────
     LEGIT             = "legit"
     SUSPICIOUS        = "suspicious"
     SCAM              = "scam"
     INSUFFICIENT_INFO = "insufficient_info"
 
+    # ── EASY TASK labels (placeholders) ─────────────────────────────────────
+    # TODO: add easy-specific labels here if needed
+
+    # ── HARD TASK labels (placeholders) ─────────────────────────────────────
+    # TODO: add hard-specific labels here if needed
+
 
 # ---------------------------------------------------------------------------
-# Action
+# Unified Action
 # ---------------------------------------------------------------------------
-
 class JobScamAction(Action):
     """
-    A single step action submitted by the client.
+    A single step action submitted by the client — valid for all task variants.
 
     For information-gathering steps, set ``action_type`` to one of the
-    four ``REQUEST_*`` variants and leave ``label`` as ``None``.
+    ``REQUEST_*`` variants appropriate for the active task, and leave
+    ``label`` as ``None``.
 
     For the terminal classification step, set ``action_type`` to
     ``CLASSIFY`` and provide a ``ClassificationLabel`` in ``label``.
 
-    Example (info request)::
+    The server will reject ``REQUEST_*`` actions that do not belong to the
+    current episode's task (e.g. sending a medium-task action during an
+    easy-task episode).
+
+    Example — medium info request::
 
         JobScamAction(action_type="request_company_profile")
 
-    Example (classification)::
+    Example — classification (all tasks)::
 
         JobScamAction(action_type="classify", label="scam")
     """
 
     action_type: ActionType = Field(
         ...,
-        description="Type of action: a context request or final classification.",
+        description=(
+            "Type of action: a context-field request (task-specific) or "
+            "the terminal 'classify' action (shared across all tasks)."
+        ),
     )
     label: Optional[ClassificationLabel] = Field(
         default=None,
@@ -79,51 +128,60 @@ class JobScamAction(Action):
             raise ValueError(
                 "label must be provided when action_type is 'classify'."
             )
-        if self.action_type != ActionType.CLASSIFY and self.label is not None:
-            raise ValueError(
-                "label must be None for non-classify actions."
-            )
         return self
 
 
 # ---------------------------------------------------------------------------
-# Observation
+# Unified Observation (superset of all task-specific fields)
 # ---------------------------------------------------------------------------
-
 class JobScamObservation(Observation):
     """
     Observation returned by the environment at every step.
 
-    The fields present depend on the step type:
+    Fields are grouped by which task / step type populates them.
+    Fields not relevant to the current task / step are ``None``.
 
-    Reset (step 0)
-    --------------
-    - query_type
-    - initial_query
-    - available_context
-    - step_budget
+    ── Shared fields (all tasks, all steps) ─────────────────────────────────
+    step_budget        : remaining step budget for the episode
+    info               : reward_breakdown + cumulative reward details
 
-    Information request (steps 1–4)
-    --------------------------------
-    - requested_field
-    - field_content
-    - step_budget
+    ── Reset fields (all tasks, step 0) ─────────────────────────────────────
+    task_name          : which task variant is active ("easy"|"medium"|"hard")
+    query_type         : channel type of the job opportunity
+    initial_query      : raw text the candidate received
+    available_context  : names of hidden context fields the client may request
 
-    Classification / terminal (classify action or timeout)
-    -------------------------------------------------------
-    - predicted_label     (classification only)
-    - actual_label        (classification only)
-    - episode_done        (timeout only)
-    - reason              (timeout only, value: "timeout")
-    - step_budget
+    ── MEDIUM TASK — information request fields ──────────────────────────────
+    requested_field    : name of the context field just returned
+    field_content      : raw text content of that field
 
-    The ``metadata`` dict (inherited from Observation) always carries
-    ``info.reward_breakdown`` and ``info.cumulative`` so the client can
-    inspect the grading details without them being part of the primary
-    observation contract.
+    ── EASY TASK — information request fields (placeholders) ─────────────────
+    # TODO: add easy-specific observation fields here when task is designed
+
+    ── HARD TASK — information request fields (placeholders) ─────────────────
+    # TODO: add hard-specific observation fields here when task is designed
+
+    ── Classification / terminal fields (all tasks) ──────────────────────────
+    predicted_label    : label the client submitted
+    actual_label       : ground-truth label (revealed only at terminal step)
+    episode_done       : True when the episode has ended (classification or timeout)
+    reason             : "classification" | "timeout"
     """
 
-    # ── Reset fields ────────────────────────────────────────────────────────
+    # ── Shared / budget ──────────────────────────────────────────────────────
+    step_budget: Optional[Dict[str, int]] = Field(
+        default=None,
+        description="Keys: total, used, remaining.",
+    )
+
+    # ── Reset — shared across all tasks ──────────────────────────────────────
+    task_name: Optional[str] = Field(
+        default=None,
+        description=(
+            "Task variant active for this episode: 'easy' | 'medium' | 'hard'. "
+            "Set at reset and echoed in every subsequent observation."
+        ),
+    )
     query_type: Optional[str] = Field(
         default=None,
         description="Channel type: job_post | email | whatsapp_msg | telegram_msg.",
@@ -132,28 +190,33 @@ class JobScamObservation(Observation):
         default=None,
         description="Raw text of the job opportunity as received by the candidate.",
     )
+
+    # ── MEDIUM TASK ───────────────────────────────
     available_context: Optional[List[str]] = Field(
         default=None,
-        description="Names of hidden context fields the client may request.",
+        description="[Medium] Names of hidden context fields the client may request.",
     )
-
-    # ── Shared budget ────────────────────────────────────────────────────────
-    step_budget: Optional[Dict[str, int]] = Field(
-        default=None,
-        description="Keys: total, used, remaining.",
-    )
-
-    # ── Info request fields ──────────────────────────────────────────────────
     requested_field: Optional[str] = Field(
         default=None,
-        description="Name of the context field that was just returned.",
+        description="[Medium] Name of the context field that was just returned.",
     )
     field_content: Optional[str] = Field(
         default=None,
-        description="Raw text content of the requested context field.",
+        description="[Medium] Raw text content of the requested context field.",
     )
 
-    # ── Terminal classification fields ───────────────────────────────────────
+    # ── EASY TASK ─────────────────
+    # TODO: add easy-task-specific observation fields here.
+    # Example:
+    #   easy_summary: Optional[str] = Field(default=None, description="[Easy] ...")
+
+    # ── HARD TASK ─────────────────
+    # TODO: add hard-task-specific observation fields here.
+    # Example:
+    #   hard_social_profile: Optional[str] = Field(default=None, description="[Hard] ...")
+    #   hard_payment_history: Optional[str] = Field(default=None, description="[Hard] ...")
+
+    # ── Terminal / classification fields (all tasks) ──────────────────────────
     predicted_label: Optional[str] = Field(
         default=None,
         description="Label submitted by the client.",
@@ -162,19 +225,18 @@ class JobScamObservation(Observation):
         default=None,
         description="Ground-truth label revealed only at terminal step.",
     )
-
-    # ── Timeout fields ───────────────────────────────────────────────────────
     episode_done: Optional[bool] = Field(
         default=None,
-        description="True only when the episode ends by timeout.",
+        description="True when the episode has ended (classification or timeout).",
     )
     reason: Optional[str] = Field(
         default=None,
-        description="Reason for episode termination (e.g. 'timeout').",
+        description="Reason for episode termination: 'classification' | 'timeout'.",
     )
-
-    # ── Info ─────────────────────────────────────────────────────────────
     info: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Contains reward_breakdown and cumulative reward information.",
+        description=(
+            "Contains reward_breakdown (step-level) and cumulative reward "
+            "totals so the client can inspect grading details."
+        ),
     )
