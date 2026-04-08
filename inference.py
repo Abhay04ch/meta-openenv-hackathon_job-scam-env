@@ -36,7 +36,7 @@ API_BASE_URL:  str           = os.getenv("API_BASE_URL", "https://router.hugging
 API_KEY:       Optional[str] = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 MODEL_NAME:    Optional[str] = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 LOCAL_IMAGE_NAME: Optional[str] = os.getenv("LOCAL_IMAGE_NAME", "job_scam_env:latest")
-
+HF_SPACE_URL:  Optional[str] = os.getenv("HF_SPACE_URL", "https://sumitwarrior7-job-scam-env.hf.space")
 BENCHMARK:   str   = "job_scam_detection"
 TEMPERATURE: float = 0.2
 MAX_TOKENS:  int   = 300
@@ -426,7 +426,8 @@ async def main() -> None:
 
     llm_client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-    env = await JobScamEnv.from_docker_image(LOCAL_IMAGE_NAME)
+    # env = await JobScamEnv.from_docker_image(LOCAL_IMAGE_NAME)
+    env = JobScamEnv(base_url=HF_SPACE_URL)
 
     async with env:
         for task_id, task_name, max_steps in TASKS:
