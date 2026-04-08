@@ -376,11 +376,11 @@ async def run_episode(env: JobScamEnv, llm_client: OpenAI) -> float:
                 )
 
                 info = obs.info or {}
-                print(f"         Reward    : {reward:+.4f}")
+                print(f"         Step Reward    : {reward:+.4f}")
                 if info.get("reward_breakdown"):
-                    print(f"         Breakdown : {info['reward_breakdown']}")
+                    print(f"         Breakdown      : {info['reward_breakdown']}")
                 if info.get("cumulative"):
-                    print(f"         Cumulative: {info['cumulative']}")
+                    print(f"         Cumulative     : {info['cumulative']}")
             elif TASK_NAME == "hard":
                 # TODO: derive field name for hard-task actions when designed
                 field_name = action.action_type.value.replace("request_", "")
@@ -394,23 +394,24 @@ async def run_episode(env: JobScamEnv, llm_client: OpenAI) -> float:
                 info = obs.info or {}
                 if obs.reason == "timeout":
                     print(f"\n  TIMEOUT — all steps exhausted without classifying.")
-                    print(f"  Timeout penalty: {reward:+.4f}")
+                    print(f"  Timeout penalty: {info['reward_breakdown']['timeout_penalty']:+.4f}")
+                    print(f"  Step Reward    : {reward:+.4f}")
                 else:
                     print(f"\n  CLASSIFICATION RESULT")
-                    print(f"    Predicted : {obs.predicted_label}")
-                    print(f"    Actual    : {obs.actual_label}")
+                    print(f"    Step reward  : {reward:+.4f}")
+                    print(f"    Predicted    : {obs.predicted_label}")
+                    print(f"    Actual       : {obs.actual_label}")
                     correct = obs.predicted_label == obs.actual_label
-                    print(f"    Correct   : {correct}")
-                    print(f"    Terminal reward  : {reward:+.4f}")
+                    print(f"    Correct      : {correct}\n")
                     if info.get("reward_breakdown"):
-                        print(f"    Breakdown        : {info['reward_breakdown']}")
+                        print(f"    Breakdown      : {info['reward_breakdown']}")
                     if info.get("cumulative"):
-                        print(f"    Episode total    : {info['cumulative'].get('total_reward', '?'):+}")
+                        print(f"    Episode total  : {info['cumulative']}")
                 break
             elif TASK_NAME == "hard":
                 break
 
-    print(f"\nEpisode finished.  Total reward: {total_reward:+.4f}")
+    print(f"\nEpisode finished!!")
     return total_reward
 
 

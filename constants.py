@@ -35,7 +35,7 @@ EASY_ACTION_TO_FIELD: Dict[str, str] = {}
 # MEDIUM TASK constants  (the original / current task)
 # ===========================================================================
 MEDIUM_MAX_STEPS: int = 5
-MEDIUM_TIMEOUT_PENALTY: float = -1.5
+MEDIUM_TIMEOUT_PENALTY: float = (-1)*(1+((MEDIUM_MAX_STEPS-1)*0.1))
 MEDIUM_DATASET_FILENAME: str = "data_task_medium.jsonl"
 
 # Reward matrix: MEDIUM_REWARD_MATRIX[predicted][ground_truth]

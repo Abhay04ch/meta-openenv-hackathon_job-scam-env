@@ -168,7 +168,6 @@ class JobScamEnvironment(Environment):
         self._HARD_DATASET: Optional[List[Dict[str, Any]]] = None
 
     # ---------------------------------------------------------------- reset
-
     def reset(self, task_name: str = "medium") -> JobScamObservation:
         """
         Start a new episode with a randomly selected dataset sample.
@@ -197,7 +196,6 @@ class JobScamEnvironment(Environment):
             return self._hard_reset()
 
     # ---------------------------------------------------------------- step
-
     def step(self, action: JobScamAction) -> JobScamObservation:  # type: ignore[override]
         """
         Execute one action and return the resulting observation.
@@ -329,15 +327,15 @@ class JobScamEnvironment(Environment):
         field_scores = self._medium_compute_field_scores(sample)
 
         self._episode = {
-            "sample":                      sample,
-            "field_scores":                field_scores,
-            "requested_fields":            set(),           # type: Set[str]
-            "used_steps":                  0,
-            "max_steps":                   MEDIUM_MAX_STEPS,
-            "info_reward_total":           0.0,
-            "classification_reward_total": 0.0,
-            "total_reward":                0.0,
-            "done":                        False,
+            "sample":                        sample,
+            "field_scores":                  field_scores,
+            "requested_fields":              set(),           # type: Set[str]
+            "used_steps":                    0,
+            "max_steps":                     MEDIUM_MAX_STEPS,
+            "requested_fields_reward_total": 0.0,
+            "classification_reward_total":   0.0,
+            "total_reward":                  0.0,
+            "done":                          False,
         }
 
         return JobScamObservation(
@@ -396,13 +394,15 @@ class JobScamEnvironment(Environment):
                 "signal_reward":             0.0,
                 "redundancy_penalty":       -0.20,
                 "irrelevant_field_penalty":  0.0,
+                "normalized_reward":         None,
             }
         elif signal == 0.0:
             step_reward      = -0.10
             reward_breakdown = {
                 "signal_reward":             0.0,
                 "redundancy_penalty":        0.0,
-                "irrelevant_field_penalty": -0.10,
+                "irrelevant_field_penalty": -0.05,
+                "normalized_reward":         None,
             }
         else:
             step_reward      = round(0.10 * signal, 4)
@@ -410,14 +410,15 @@ class JobScamEnvironment(Environment):
                 "signal_reward":            step_reward,
                 "redundancy_penalty":       0.0,
                 "irrelevant_field_penalty": 0.0,
+                "normalized_reward":        None,
             }
 
         # Mark as seen (even redundant requests are recorded to track the penalty)
         self._episode["requested_fields"].add(field_name)
 
         # ── Update cumulative totals ─────────────────────────────────────────
-        self._episode["info_reward_total"] = round(
-            self._episode["info_reward_total"] + step_reward, 4
+        self._episode["requested_fields_reward_total"] = round(
+            self._episode["requested_fields_reward_total"] + step_reward, 4
         )
         self._episode["total_reward"] = round(
             self._episode["total_reward"] + step_reward, 4
@@ -440,7 +441,7 @@ class JobScamEnvironment(Environment):
             info={
                 "reward_breakdown": reward_breakdown,
                 "cumulative": {
-                    "requested_fields_reward_total": self._episode["info_reward_total"],
+                    "requested_fields_reward_total": self._episode["requested_fields_reward_total"],
                     "classification_reward_total":   self._episode["classification_reward_total"],
                     "total_reward":                  self._episode["total_reward"],
                 },
@@ -463,6 +464,11 @@ class JobScamEnvironment(Environment):
             classification_reward + total_steps_taken_reward, 4
         )
 
+        maxv = 1+((MEDIUM_MAX_STEPS-1)*0.1) # 0.1 refers to alpha
+        minv = -maxv
+        # MinMax Normalization
+        normalized_reward = round((terminal_reward - minv) / (maxv - minv), 4) if maxv != minv else 0.0
+
         self._episode["classification_reward_total"] = terminal_reward
         self._episode["total_reward"] = round(
             self._episode["total_reward"] + terminal_reward, 4
@@ -477,17 +483,18 @@ class JobScamEnvironment(Environment):
             done=True,
             episode_done=True,
             reason="classification",
-            reward=terminal_reward,
+            reward=normalized_reward,
             info={
                 "reward_breakdown": {
                     "classification_reward":    classification_reward,
                     "total_steps_taken_reward": total_steps_taken_reward,
                     "timeout_penalty":          0.0,
+                    "normalized_reward":        normalized_reward,
                 },
                 "cumulative": {
-                    "info_reward_total":           self._episode["info_reward_total"],
-                    "classification_reward_total": self._episode["classification_reward_total"],
-                    "total_reward":                self._episode["total_reward"],
+                    "requested_fields_reward_total": self._episode["requested_fields_reward_total"],
+                    "classification_reward_total":   self._episode["classification_reward_total"],
+                    "total_reward":                  self._episode["total_reward"],
                 },
             },
         )
@@ -502,6 +509,11 @@ class JobScamEnvironment(Environment):
         ``extra_info_reward`` has already been added to cumulative totals by
         the caller; only the timeout penalty is added here.
         """
+        maxv = 1+((MEDIUM_MAX_STEPS-1)*0.1) # 0.1 refers to alpha
+        minv = -maxv
+        # MinMax Normalization
+        normalized_reward = round((MEDIUM_TIMEOUT_PENALTY - minv) / (maxv - minv), 4) if maxv != minv else 0.0
+
         self._episode["total_reward"] = round(
             self._episode["total_reward"] + MEDIUM_TIMEOUT_PENALTY, 4
         )
@@ -519,9 +531,10 @@ class JobScamEnvironment(Environment):
                     "classification_reward":    0.0,
                     "total_steps_taken_reward": 0.0,
                     "timeout_penalty":          MEDIUM_TIMEOUT_PENALTY,
+                    "normalized_reward":        normalized_reward,
                 },
                 "cumulative": {
-                    "requested_fields_reward_total": self._episode["info_reward_total"],
+                    "requested_fields_reward_total": self._episode["requested_fields_reward_total"],
                     "classification_reward_total":   self._episode["classification_reward_total"],
                     "total_reward":                  self._episode["total_reward"],
                 },
