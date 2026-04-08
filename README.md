@@ -34,12 +34,43 @@ Or with Docker:
 
 ```bash
 docker build -t job_scam_env-env:latest .
-python inference.py   # connects via from_docker_image()
+python inference.py   # connects via ENV_URL (HF Space)
 ```
+## Task Structure
+
+The environment supports **three difficulty levels**:
+
+| Task | Description |
+|---|---|
+| **Easy** | Single-message classification (no investigation) |
+| **Medium** | Multi-step investigation using context fields |
+| **Hard** | Advanced multi-signal reasoning (in development) |
 
 ---
 
 ## Episode structure
+
+### Easy task
+
+```
+
+reset()
+└─ Observation: query_type, initial_query, step_budget
+
+step(classify(label)) exactly once, terminal
+└─ Observation: predicted_label, actual_label
+Reward: classification_reward
+done: true
+
+```
+
+Maximum steps per episode: **1**
+
+No context requests are allowed.
+
+---
+
+### Medium task
 
 ```
 reset()
@@ -66,6 +97,18 @@ Maximum steps per episode: **5** (4 info requests + 1 classify, or fewer).
 
 ## Action space
 
+### Easy task
+
+| Action | Description |
+|---|---|
+| `classify(label)` | Submit final verdict — **terminates the episode** |
+
+Valid labels: `legit` · `scam`
+
+---
+
+### Medium task
+
 | Action | Description |
 |---|---|
 | `request_recruiter_profile` | Fetch recruiter name, contact, and bio |
@@ -80,7 +123,21 @@ Valid labels: `legit` · `suspicious` · `scam` · `insufficient_info`
 
 ## Reward structure
 
-### Per-step information reward
+### Easy task
+
+Classification-only reward:
+
+| Condition | Reward |
+|---|---|
+| Correct classification | `+1.0` |
+| Incorrect classification (scam → legit) | `0.1` |
+| Incorrect classification (legit → scam) | `0.0` |
+
+No intermediate rewards. No step penalties.
+
+### Medium task
+
+#### Per-step information reward
 
 ```
 signal_score(field) = (|red_categories| + |green_categories|) /
@@ -161,6 +218,23 @@ obs.metadata["info"]["cumulative"]         # dict
 
 ## Dataset
 
+### Easy dataset
+
+Stored in:
+```
+server/data_task_easy.jsonl
+```
+Each sample contains:
+
+- `sample_id`
+- `query_type`
+- `initial_query`
+- `ground_truth` (`legit` | `scam`)
+
+---
+
+### Medium dataset
+
 Four built-in samples cover all four query types and all four GT labels:
 
 | sample_id | query_type | ground_truth |
@@ -170,7 +244,10 @@ Four built-in samples cover all four query types and all four GT labels:
 | job_003 | whatsapp_msg | scam |
 | job_004 | telegram_msg | insufficient_info |
 
-The dataset is embedded directly in `server/job_scam_env_environment.py`.
+Stored in:
+```
+server/data_task_medium.jsonl
+```
 
 Each sample contains:
 - `red_flag_categories`
