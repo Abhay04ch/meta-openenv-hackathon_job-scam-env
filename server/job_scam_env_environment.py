@@ -52,12 +52,19 @@ from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 import json
 from pathlib import Path
+from ..hard_reward_engine import HardRewardEngine
+from ..hard_task_grader import HardTaskGrader
+from ..hard_schema_mixin import HardSchemaMixin
 
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
 try:
     from ..models import ActionType, ClassificationLabel, JobScamAction, JobScamObservation
+    from ..hard_reward_engine import HardRewardEngine
+    from ..hard_task_grader import HardTaskGrader
+    from ..hard_schema_mixin import HardSchemaMixin
+
     from ..constants import (
         VALID_TASK_NAMES,
         # Easy
@@ -67,16 +74,21 @@ try:
         MEDIUM_REWARD_MATRIX, MEDIUM_ACTION_TO_FIELD, MEDIUM_ALL_CONTEXT_FIELDS,
         MEDIUM_MAX_STEPS, MEDIUM_TIMEOUT_PENALTY, MEDIUM_DATASET_FILENAME,
         # Hard
-        HARD_DATASET_FILENAME, HARD_ACTION_TO_FIELD,
+        HARD_MAX_STEPS, HARD_TIMEOUT_PENALTY, HARD_DATASET_FILENAME,
+        HARD_ACTION_TO_FIELD, HARD_ALL_CONTEXT_FIELDS,
     )
 except ImportError:
     from models import ActionType, ClassificationLabel, JobScamAction, JobScamObservation
+    from hard_reward_engine import HardRewardEngine
+    from hard_task_grader import HardTaskGrader
+    from hard_schema_mixin import HardSchemaMixin
     from constants import (
         VALID_TASK_NAMES,
         EASY_DATASET_FILENAME,
         MEDIUM_REWARD_MATRIX, MEDIUM_ACTION_TO_FIELD, MEDIUM_ALL_CONTEXT_FIELDS,
         MEDIUM_MAX_STEPS, MEDIUM_TIMEOUT_PENALTY, MEDIUM_DATASET_FILENAME,
-        HARD_DATASET_FILENAME,
+        HARD_MAX_STEPS, HARD_TIMEOUT_PENALTY, HARD_DATASET_FILENAME,
+        HARD_ACTION_TO_FIELD, HARD_ALL_CONTEXT_FIELDS,
     )
 
 
@@ -163,6 +175,8 @@ class JobScamEnvironment(Environment):
         self._MEDIUM_DATASET: List[Dict[str, Any]] = _load_dataset(MEDIUM_DATASET_FILENAME)
         self._EASY_DATASET: List[Dict[str, Any]] = _load_dataset(EASY_DATASET_FILENAME)
         self._HARD_DATASET: List[Dict[str, Any]] = _load_dataset(HARD_DATASET_FILENAME)
+        self.hard_reward_engine = HardRewardEngine()
+        self.hard_grader = HardTaskGrader()
 
     # ---------------------------------------------------------------- reset
 
@@ -218,7 +232,7 @@ class JobScamEnvironment(Environment):
 
         # ── Dispatch to task-specific step logic ─────────────────────────────
         if self._task_name == "easy":
-            if action.action_type == ActionType.CLASSIFY_EASY:
+            if action.action_type == ActionType.CLASSIFY:
                 return self._easy_handle_classify(action)
 
         elif self._task_name == "medium":
@@ -227,8 +241,9 @@ class JobScamEnvironment(Environment):
             return self._medium_handle_field_request(action)
 
         elif self._task_name == "hard":
-            ## Implement your own logic ##
-            pass
+            if action.action_type == ActionType.CLASSIFY:
+                return self._hard_handle_classify(action)
+            return self._hard_handle_field_request(action)
 
     @property
     def state(self) -> State:
@@ -249,7 +264,7 @@ class JobScamEnvironment(Environment):
         Raise ValueError if the action_type does not belong to the active task
         (and is not the universal CLASSIFY action).
         """
-        if action.action_type == ActionType.CLASSIFY or action.action_type == ActionType.CLASSIFY_EASY:
+        if action.action_type == ActionType.CLASSIFY or action.action_type == ActionType.CLASSIFY:
             return  # always valid
 
         if self._task_name == "easy":
@@ -361,6 +376,9 @@ class JobScamEnvironment(Environment):
     # =========================================================================
     def _medium_reset(self) -> JobScamObservation:
         """Start a new medium-task episode with a randomly selected sample."""
+        if self._MEDIUM_DATASET is None:
+          self._MEDIUM_DATASET = _load_dataset(MEDIUM_DATASET_FILENAME)
+
         sample       = random.choice(self._MEDIUM_DATASET)
         field_scores = self._medium_compute_field_scores(sample)
 
@@ -584,47 +602,210 @@ class JobScamEnvironment(Environment):
     # =========================================================================
     def _hard_reset(self) -> JobScamObservation:
         """
-        Reset the environment for a hard-task episode.
-
-        TODO: Implement when the hard task design is finalised.
-              Replace the NotImplementedError with the actual logic,
-              following the same pattern as _medium_reset().
+        Start a new hard-task episode with trajectory-aware grading.
+        Medium task logic remains untouched.
         """
 
-        # TODO: implement hard reset logic here
-        raise NotImplementedError(
-            "Hard task is not yet implemented. "
-            "Add the reset logic in _hard_reset() and update constants.py."
+        sample = random.choice(self._HARD_DATASET)
+
+        self._episode = {
+            "sample": sample,
+            "requested_fields": set(),   # type: Set[str]
+            "used_steps": 0,
+            "max_steps": HARD_MAX_STEPS,
+            "total_reward": 0.0,
+            "done": False,
+            "scratchpad": {},
+        }
+
+        return JobScamObservation(
+            task_name=self._task_name,
+            query_type=sample["query_type"],
+            initial_query=sample["initial_signal"],
+            available_context=HARD_ALL_CONTEXT_FIELDS,
+            step_budget={
+                "total": HARD_MAX_STEPS,
+                "used": 0,
+                "remaining": HARD_MAX_STEPS,
+            },
+            episode_done=False,
+            done=False,
+            reward=0.0,
+            info={},
         )
 
-    def _hard_handle_field_request(self, action: JobScamAction) -> JobScamObservation:
-        """
-        Handle an information-gathering action for the hard task.
 
-        TODO: Implement when the hard task design is finalised.
+    def _hard_handle_field_request(
+        self,
+        action: JobScamAction,
+    ) -> JobScamObservation:
         """
-        raise NotImplementedError("Hard task field request not yet implemented.")
+        Handle evidence retrieval step for hard task.
+        """
+        field_name = HARD_ACTION_TO_FIELD[action.action_type.value]
+        sample = self._episode["sample"]
+        print(f"Handling hard field request for '{field_name}'")
+        print(f"Available fields in sample:{sample}")
 
-    def _hard_handle_classify(self, action: JobScamAction) -> JobScamObservation:
-        """
-        Handle the terminal classify action for the hard task.
+        already_seen = field_name in self._episode["requested_fields"]
 
-        TODO: Implement when the hard task design is finalised.
+        print(f"Already seen: {already_seen}")
+
+        # --------------------------------------------------------
+        # Reward retrieval
+        # --------------------------------------------------------
+        if already_seen:
+            step_reward = -0.10
+        else:
+            step_reward = 0.10
+            self._episode["requested_fields"].add(field_name)
+
+        field_content = sample["environment_state"].get(field_name, {})
+        
+        if isinstance(field_content, (dict, list)):
+            field_content = json.dumps(field_content, indent=2)
+        
+        print(f"Field content: {field_content}")
+
+
+
+        # Track evidence usage for grader
+        scratchpad = self._episode["scratchpad"]
+        scratchpad.setdefault("evidence_used", []).append(field_name)
+        print(f"Updated scratchpad: {scratchpad}")
+
+        self._episode["total_reward"] = round(
+            self._episode["total_reward"] + step_reward,
+            4,
+        )
+
+        budget = self._budget_dict()
+
+        # Timeout on last step
+        if budget["remaining"] == 0:
+            return self._hard_handle_timeout()
+
+        return JobScamObservation(
+            task_name=self._task_name,
+            requested_field=field_name,
+            field_content=field_content,
+            step_budget=budget,
+            episode_done=False,
+            done=False,
+            reward=step_reward,
+            info={
+                "cumulative": {
+                    "total_reward": self._episode["total_reward"]
+                }
+            },
+        )
+
+
+    def _hard_handle_classify(
+        self,
+        action: JobScamAction,
+    ) -> JobScamObservation:
         """
-        raise NotImplementedError("Hard task classify not yet implemented.")
+        Handle terminal classification for hard task.
+        Uses HardRewardEngine + HardTaskGrader.
+        """
+        predicted = action.label.value
+        sample = self._episode["sample"]
+
+        scratchpad = self._episode["scratchpad"]
+
+        # Final action state for reward + grader
+        scratchpad["final_action"] = predicted
+        scratchpad[f"classified_as_{predicted}"] = True
+
+        # Convert requested fields back to action names
+        requested_tools = [
+            action_name
+            for action_name, field_name in HARD_ACTION_TO_FIELD.items()
+            if field_name in self._episode["requested_fields"]
+        ]
+
+        # --------------------------------------------------------
+        # Compute terminal reward
+        # --------------------------------------------------------
+        terminal_reward = self.hard_reward_engine.compute(
+            sample,
+            requested_tools,
+            scratchpad,
+        )
+
+        # --------------------------------------------------------
+        # Compute final grading
+        # --------------------------------------------------------
+        grading = self.hard_grader.grade(
+            sample,
+            requested_tools,
+            scratchpad,
+        )
+
+        self._episode["total_reward"] = round(
+            self._episode["total_reward"] + terminal_reward,
+            4,
+        )
+        self._episode["done"] = True
+
+        expected = sample["ground_truth"]["expected_final_actions"][0]
+
+        return JobScamObservation(
+            task_name=self._task_name,
+            predicted_label=predicted,
+            actual_label=expected,
+            step_budget=self._budget_dict(),
+            done=True,
+            episode_done=True,
+            reason="classification",
+            reward=terminal_reward,
+            info={
+                "grading": grading,
+                "cumulative": {
+                    "total_reward": self._episode["total_reward"]
+                },
+            },
+        )
+
 
     def _hard_handle_timeout(self) -> JobScamObservation:
         """
-        Handle step-budget exhaustion for the hard task.
-
-        TODO: Implement when the hard task design is finalised.
+        Handle hard-task timeout.
         """
-        raise NotImplementedError("Hard task timeout not yet implemented.")
+        timeout_penalty = HARD_TIMEOUT_PENALTY
 
-    def _hard_compute_field_scores(self, sample: Dict[str, Any]) -> Dict[str, float]:
-        """
-        Compute signal scores for each field in a hard-task sample.
+        self._episode["total_reward"] = round(
+            self._episode["total_reward"] + timeout_penalty,
+            4,
+        )
+        self._episode["done"] = True
 
-        TODO: Implement when the hard task design is finalised.
+        return JobScamObservation(
+            task_name=self._task_name,
+            episode_done=True,
+            reason="timeout",
+            step_budget=self._budget_dict(),
+            done=True,
+            reward=timeout_penalty,
+            info={
+                "cumulative": {
+                    "total_reward": self._episode["total_reward"]
+                }
+            },
+        )
+
+
+    def _hard_compute_field_scores(
+        self,
+        sample: Dict[str, Any],
+    ) -> Dict[str, float]:
         """
-        raise NotImplementedError("Hard task field score computation not yet implemented.")
+        Hard task uses trajectory grading instead of signal scoring.
+        Keeping this for interface consistency only.
+        """
+        env_state = sample.get("environment_state", {})
+        return {
+            field_name: 1.0
+            for field_name in env_state.keys()
+        }

@@ -28,8 +28,10 @@ Adding a new task
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from dataclasses import field
 
 from openenv.core.env_server.types import Action, Observation
 from pydantic import Field, model_validator
@@ -52,12 +54,16 @@ class ActionType(str, Enum):
     # ── EASY TASK ────────────
     # TODO: uncomment / add when easy task is designed
     # REQUEST_EASY_FIELD_A = "request_easy_field_a"
-    CLASSIFY_EASY = "classify"
 
     # ── HARD TASK ────────────
-    # TODO: uncomment / add when hard task is designed
-    # REQUEST_HARD_FIELD_A = "request_hard_field_a"
-    # REQUEST_HARD_FIELD_B = "request_hard_field_b"
+    REQUEST_SENDER_PROFILE = "request_sender_profile"
+    REQUEST_ORGANIZATION_PROFILE = "request_organization_profile"
+    REQUEST_SHARED_CHANNEL_HISTORY = "request_shared_channel_history"
+    REQUEST_PRIVATE_CONVERSATION_HISTORY = "request_private_conversation_history"
+    REQUEST_CANDIDATE_INTERACTION_HISTORY = "request_candidate_interaction_history"
+    REQUEST_EXTERNAL_MARKET_SIGNALS = "request_external_market_signals"
+    REQUEST_ATTACHED_ARTIFACTS = "request_attached_artifacts"
+    REQUEST_TEMPORAL_CONTEXT = "request_temporal_context"
 
 
 class ClassificationLabel(str, Enum):
@@ -132,6 +138,14 @@ class JobScamAction(Action):
                 "label must be provided when action_type is 'classify'."
             )
         return self
+    
+    def model_dump(self, *args, **kwargs):
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
+    def model_dump_json(self, *args, **kwargs):
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump_json(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -243,3 +257,49 @@ class JobScamObservation(Observation):
             "totals so the client can inspect grading details."
         ),
     )
+
+
+@dataclass
+class RewardRule:
+    condition: str
+    reward: float
+
+
+@dataclass
+class HardRewardLogic:
+    dense_rewards: List[RewardRule] = field(default_factory=list)
+    sparse_rewards: List[RewardRule] = field(default_factory=list)
+    penalties: List[RewardRule] = field(default_factory=list)
+    efficiency_penalty_per_extra_tool: float = 0.05
+
+
+@dataclass
+class HardGradingLogic:
+    tool_correctness_weight: float = 0.25
+    trajectory_weight: float = 0.30
+    final_action_weight: float = 0.25
+    evidence_quality_weight: float = 0.10
+    efficiency_weight: float = 0.10
+
+
+@dataclass
+class HardGroundTruth:
+    required_steps: List[str]
+    optimal_action_sequence: List[str]
+    acceptable_alternative_sequences: List[List[str]]
+    expected_final_actions: List[str]
+    must_not_do: List[str]
+
+
+@dataclass
+class HardEpisode:
+    episode_id: str
+    difficulty: str
+    domain: str
+    query_type: str
+    initial_signal: str
+    environment_state: Dict[str, Any]
+    allowed_tools: List[str]
+    ground_truth: HardGroundTruth
+    reward_logic: HardRewardLogic
+    grading_logic: HardGradingLogic

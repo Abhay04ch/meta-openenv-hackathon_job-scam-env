@@ -47,4 +47,4 @@ packages = ["job_scam_env", "job_scam_env.server"]
 package-dir = { "job_scam_env" = ".", "job_scam_env.server" = "server" }
 
 [tool.setuptools.package-data]
-"job_scam_env.server" = ["data_task_medium.jsonl"]
+"job_scam_env.server" = ["data_task_medium.jsonl", "data_task_hard.jsonl"]

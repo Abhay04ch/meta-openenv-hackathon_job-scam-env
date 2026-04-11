@@ -88,12 +88,21 @@ MEDIUM_ALL_CONTEXT_FIELDS: List[str] = list(MEDIUM_ACTION_TO_FIELD.values())
 
 
 # ===========================================================================
-# HARD TASK constants  (placeholders — fill in when hard task is designed)
+# HARD TASK constants
 # ===========================================================================
-HARD_MAX_STEPS: int = 7
-# HARD_TIMEOUT_PENALTY: float = -1.5
+HARD_MAX_STEPS: int = 8
+HARD_TIMEOUT_PENALTY: float = -1.0
 HARD_DATASET_FILENAME: str = "data_task_hard.jsonl"
 
 # HARD_REWARD_MATRIX: Dict[str, Dict[str, float]] = {}
-HARD_ACTION_TO_FIELD: Dict[str, str] = {}
-# HARD_ALL_CONTEXT_FIELDS: List[str] = []
+HARD_ACTION_TO_FIELD = {
+    "request_sender_profile": "sender_profile",
+    "request_organization_profile": "organization_profile",
+    "request_shared_channel_history": "shared_channel_history",
+    "request_private_conversation_history": "private_conversation_history",
+    "request_candidate_interaction_history": "candidate_interaction_history",
+    "request_external_market_signals": "external_market_signals",
+    "request_attached_artifacts": "attached_artifacts",
+    "request_temporal_context": "temporal_context",
+}
+HARD_ALL_CONTEXT_FIELDS: List[str] = list(HARD_ACTION_TO_FIELD.values())

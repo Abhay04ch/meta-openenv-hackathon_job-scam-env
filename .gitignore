@@ -2,3 +2,6 @@
 
 .venv
 venv
+__pycache__/
+openenv_job_scam_env.egg-info/
+server/__pycache__/

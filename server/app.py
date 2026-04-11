@@ -48,17 +48,19 @@ except Exception as e:  # pragma: no cover
 
 print("importing job_scam_env!!")
 try:
-    from job_scam_env.models import JobScamAction, JobScamObservation
+    from job_scam_env.server.models import JobScamAction, JobScamObservation, ActionType
     from job_scam_env.server.job_scam_env_environment import JobScamEnvironment
 except (ModuleNotFoundError, ImportError):
     try:
         print("error 1 — trying relative imports")
-        from ..models import JobScamAction, JobScamObservation
+        from ..models import JobScamAction, JobScamObservation, ActionType
         from .job_scam_env_environment import JobScamEnvironment
     except ImportError:
         print("error 2 — falling back to bare imports")
         from models import JobScamAction, JobScamObservation
         from job_scam_env_environment import JobScamEnvironment
+
+print("SERVER ACTION ENUMS:", [x.value for x in ActionType])
 
 app = create_app(
     JobScamEnvironment,
