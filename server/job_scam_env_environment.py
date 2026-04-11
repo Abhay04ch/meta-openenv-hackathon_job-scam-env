@@ -52,9 +52,6 @@ from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 import json
 from pathlib import Path
-from ..hard_reward_engine import HardRewardEngine
-from ..hard_task_grader import HardTaskGrader
-from ..hard_schema_mixin import HardSchemaMixin
 
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
@@ -617,7 +614,7 @@ class JobScamEnvironment(HardSchemaMixin, Environment):
             "forbidden_shortcut_hits": [],
             "final_action": None,
         },
-    } 
+    }
 
         return JobScamObservation(
             task_name=self._task_name,
@@ -737,7 +734,7 @@ class JobScamEnvironment(HardSchemaMixin, Environment):
             reason="classification",
             reward=terminal_reward,
             info={
-                "reward_breakdown": reward_result["reward_breakdown"],
+                # "reward_breakdown": reward_result["reward_breakdown"],
                 "grading": grading,
                 "reward_breakdown": {
                     "terminal_reward": terminal_reward,

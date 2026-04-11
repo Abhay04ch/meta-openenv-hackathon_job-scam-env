@@ -542,6 +542,7 @@ async def main() -> None:
 
     # env = await JobScamEnv.from_docker_image(LOCAL_IMAGE_NAME)
     env = JobScamEnv(base_url=HF_SPACE_URL)
+    # env = JobScamEnv(base_url="http://0.0.0.0:8000")
 
     async with env:
         for task_id, task_name, max_steps in TASKS:
