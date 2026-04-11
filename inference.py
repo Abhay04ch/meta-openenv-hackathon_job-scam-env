@@ -44,8 +44,8 @@ MAX_TOKENS:  int   = 300
 # All tasks to run — validator requires one [START]/[END] pair per task
 # ---------------------------------------------------------------------------
 TASKS: List[tuple[str, str, int]] = [
-    # ("task_easy",   "easy",   EASY_MAX_STEPS),
-    # ("task_medium", "medium", MEDIUM_MAX_STEPS),
+    ("task_easy",   "easy",   EASY_MAX_STEPS),
+    ("task_medium", "medium", MEDIUM_MAX_STEPS),
     ("task_hard",   "hard",   HARD_MAX_STEPS),
 ]
 
@@ -539,7 +539,7 @@ async def main() -> None:
     llm_client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     # env = await JobScamEnv.from_docker_image(LOCAL_IMAGE_NAME)
-    env = JobScamEnv(base_url="http://localhost:8000")
+    env = JobScamEnv(base_url=HF_SPACE_URL)
 
     async with env:
         for task_id, task_name, max_steps in TASKS:
