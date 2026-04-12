@@ -16,7 +16,7 @@ Each episode presents a real-world job opportunity (WhatsApp message, email, Tel
 
 ## Quick start
 
-bash
+```bash
 # Install dependencies
 uv sync
 
@@ -28,23 +28,23 @@ export HF_TOKEN=<your_token>
 export MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
 export API_BASE_URL=https://router.huggingface.co/v1
 python inference.py
-
+```
 
 Or with Docker:
 
-bash
+```bash
 docker build -t job_scam_env-env:latest .
 python inference.py   # connects via ENV_URL (HF Space)
-
+```
 ## Task Structure
 
-The environment supports *three difficulty levels*:
+The environment supports **three difficulty levels**:
 
 | Task | Description |
 |---|---|
-| *Easy* | Single-message classification (no investigation) |
-| *Medium* | Multi-step investigation using context fields |
-| *Hard* | Extended multi-signal investigation with graded evidence and trajectory scoring |
+| **Easy** | Single-message classification (no investigation) |
+| **Medium** | Multi-step investigation using context fields |
+| **Hard** | Extended multi-signal investigation with graded evidence and trajectory scoring |
 
 ---
 
@@ -52,7 +52,7 @@ The environment supports *three difficulty levels*:
 
 ### Easy task
 
-
+```
 
 reset()
 └─ Observation: query_type, initial_query, step_budget
@@ -62,9 +62,9 @@ step(classify(label)) exactly once, terminal
 Reward: classification_reward
 done: true
 
+```
 
-
-Maximum steps per episode: *1*
+Maximum steps per episode: **1**
 
 No context requests are allowed.
 
@@ -72,7 +72,7 @@ No context requests are allowed.
 
 ### Medium task
 
-
+```
 reset()
   └─ Observation: query_type, initial_query, available_context, step_budget
 
@@ -89,15 +89,13 @@ step(classify(label))           exactly once, terminal
 
 step budget exhausted without classify → timeout
   └─ Reward: −1.5,  done: true
+```
 
-
-Maximum steps per episode: *5* (4 info requests + 1 classify, or fewer).
-
----
+Maximum steps per episode: **5** (4 info requests + 1 classify, or fewer).
 
 ### Hard task
 
-
+```
 reset()
   └─ Observation: query_type, initial_query, available_context, step_budget
 
@@ -113,10 +111,10 @@ step(classify(label))           exactly once, terminal
 ── OR ──
 
 step budget exhausted without classify → timeout
-  └─ Reward: −1.0,  done: true
+  └─ Reward: 0.0,  done: true
 
-
-Maximum steps per episode: *8* (up to 7 context requests + 1 classify, or fewer).
+```
+Maximum steps per episode: **8** (up to 7 context requests + 1 classify, or fewer).
 
 ---
 
@@ -126,9 +124,9 @@ Maximum steps per episode: *8* (up to 7 context requests + 1 classify, or fewer)
 
 | Action | Description |
 |---|---|
-| classify(label) | Submit final verdict — *terminates the episode* |
+| `classify(label)` | Submit final verdict — **terminates the episode** |
 
-Valid labels: legit · scam
+Valid labels: `legit` · `scam`
 
 ---
 
@@ -136,13 +134,13 @@ Valid labels: legit · scam
 
 | Action | Description |
 |---|---|
-| request_recruiter_profile | Fetch recruiter name, contact, and bio |
-| request_company_profile | Fetch company domain, hiring policy, anti-scam statements |
-| request_thread_history | Fetch prior message thread between sender and candidate |
-| request_job_post_comments | Fetch public comments or forwarded warnings |
-| classify(label) | Submit final verdict — *terminates the episode* |
+| `request_recruiter_profile` | Fetch recruiter name, contact, and bio |
+| `request_company_profile` | Fetch company domain, hiring policy, anti-scam statements |
+| `request_thread_history` | Fetch prior message thread between sender and candidate |
+| `request_job_post_comments` | Fetch public comments or forwarded warnings |
+| `classify(label)` | Submit final verdict — **terminates the episode** |
 
-Valid labels: legit · suspicious · scam · insufficient_info
+Valid labels: `legit` · `suspicious` · `scam` · `insufficient_info`
 
 ---
 
@@ -150,17 +148,17 @@ Valid labels: legit · suspicious · scam · insufficient_info
 
 | Action | Description |
 |---|---|
-| request_sender_profile | Fetch sender identity, contact info, and account provenance |
-| request_organization_profile | Fetch organization domain, hiring channels, no-fee / fraud policies |
-| request_shared_channel_history | Fetch shared channel / public discussion evidence |
-| request_private_conversation_history | Fetch private chat history and pressure/payment signals |
-| request_candidate_interaction_history | Fetch prior interaction history from the candidate's perspective |
-| request_external_market_signals | Fetch threat intelligence, vendor checks, and external scam reports |
-| request_attached_artifacts | Fetch documents, invoices, offer letters, and screenshots |
-| request_temporal_context | Fetch timeline / timing context around the opportunity |
-| classify(label) | Submit final verdict — *terminates the episode* |
+| `request_sender_profile` | Fetch sender identity, contact info, and account provenance |
+| `request_organization_profile` | Fetch organization domain, hiring channels, no-fee / fraud policies |
+| `request_shared_channel_history` | Fetch shared channel / public discussion evidence |
+| `request_private_conversation_history` | Fetch private chat history and pressure/payment signals |
+| `request_candidate_interaction_history` | Fetch prior interaction history from the candidate's perspective |
+| `request_external_market_signals` | Fetch threat intelligence, vendor checks, and external scam reports |
+| `request_attached_artifacts` | Fetch documents, invoices, offer letters, and screenshots |
+| `request_temporal_context` | Fetch timeline / timing context around the opportunity |
+| `classify(label)` | Submit final verdict — *terminates the episode* |
 
-Valid labels: legit · suspicious · scam · insufficient_info
+Valid labels: `legit` · `suspicious` · `scam` · `insufficient_info`
 
 ---
 
@@ -172,9 +170,9 @@ Classification-only reward:
 
 | Condition | Reward |
 |---|---|
-| Correct classification | +1.0 |
-| Incorrect classification (scam → legit) | 0.1 |
-| Incorrect classification (legit → scam) | 0.0 |
+| Correct classification | `+1.0` |
+| Incorrect classification (scam → legit) | `0.0` |
+| Incorrect classification (legit → scam) | `0.1` |
 
 No intermediate rewards. No step penalties.
 
@@ -182,50 +180,38 @@ No intermediate rewards. No step penalties.
 
 #### Per-step information reward
 
-
+```
 signal_score(field) = (|red_categories| + |green_categories|) /
                       total_unique_categories_in_sample
-
+```
 
 | Condition | Reward |
 |---|---|
-| Valid, non-redundant field (signal > 0) | +0.10 × signal_score |
-| Field already requested this episode | −0.20 |
-| Field has zero signal (empty / N/A) | −0.10 |
+| Valid, non-redundant field (signal > 0) | `+0.10 × signal_score` |
+| Field already requested this episode | `−0.20` |
+| Field has zero signal (empty / N/A) | `−0.10` |
 
----
+#### Terminal classification reward
 
-### Terminal classification reward
-
-
+```
 classification_reward   = REWARD_MATRIX[predicted][ground_truth]
 alpha                   = +0.1  if correct  else  −0.1
 total_steps_taken_reward = alpha × remaining_steps_at_classification
 terminal_reward          = classification_reward + total_steps_taken_reward
+```
 
-
-Classification reward matrix (REWARD_MATRIX[predicted][gt]):
+Classification reward matrix (`REWARD_MATRIX[predicted][gt]`):
 
 |  | gt: legit | gt: suspicious | gt: scam | gt: insuf |
 |---|---|---|---|---|
-| *pred: legit* | +1.00 | −0.30 | −1.00 | −0.20 |
-| *pred: suspicious* | −0.10 | +1.00 | −0.30 | −0.10 |
-| *pred: scam* | −0.50 | −0.10 | +1.00 | −0.30 |
-| *pred: insuf* | −0.20 | −0.20 | −0.50 | +1.00 |
+| **pred: legit** | +1.00 | −0.30 | −1.00 | −0.20 |
+| **pred: suspicious** | −0.10 | +1.00 | −0.30 | −0.10 |
+| **pred: scam** | −0.50 | −0.10 | +1.00 | −0.30 |
+| **pred: insuf** | −0.20 | −0.20 | −0.50 | +1.00 |
 
-The asymmetric penalties reflect real-world stakes: calling a scam legit is maximally penalised at −1.00.
+The asymmetric penalties reflect real-world stakes: calling a scam `legit` is maximally penalised at −1.00.
 
----
-
-### Timeout
-
-If the agent exhausts all 5 steps without classifying:
-
-
-timeout_penalty = −1.5
-
-
----
+**Note**: If the agent exhausts all 5 steps without classifying, there will be some timeout penalty.
 
 ### Hard task
 
@@ -238,43 +224,11 @@ Hard task reward is dataset-driven and uses a combination of:
 
 Terminal classification is scored against sample-specific ground truth, expected final actions, and classification credit rules.
 
-Timeout penalty:
-
-
-timeout_penalty = 0.0
-
-
 ---
 
 ## Observation contract
 
 The client never receives: ground truth label, field signal scores, red/green flag categories, or internal reward equations.
-
-python
-# Reset observation
-obs.query_type          # str
-obs.initial_query       # str
-obs.available_context   # List[str]
-obs.step_budget         # {"total": 5, "used": 0, "remaining": 5}
-
-# Info request observation
-obs.requested_field     # str
-obs.field_content       # str
-obs.step_budget         # updated budget
-
-# Terminal (classification)
-obs.predicted_label     # str
-obs.actual_label        # str
-obs.step_budget         # final budget
-
-# Terminal (timeout)
-obs.episode_done        # True
-obs.reason              # "timeout"
-
-# All steps — reward breakdown in metadata
-obs.metadata["info"]["reward_breakdown"]   # dict
-obs.metadata["info"]["cumulative"]         # dict
-
 
 ---
 
@@ -283,80 +237,54 @@ obs.metadata["info"]["cumulative"]         # dict
 ### Easy dataset
 
 Stored in:
-
+```
 server/data_task_easy.jsonl
-
+```
 Each sample contains:
 
-- sample_id
-- query_type
-- initial_query
-- ground_truth (legit | scam)
+- `sample_id`
+- `query_type`
+- `initial_query`
+- `ground_truth` (`legit` | `scam`)
 
 ---
 
 ### Medium dataset
 
-Four built-in samples cover all four query types and all four GT labels:
-
-| sample_id | query_type | ground_truth |
-|---|---|---|
-| job_001 | job_post | legit |
-| job_002 | email | suspicious |
-| job_003 | whatsapp_msg | scam |
-| job_004 | telegram_msg | insufficient_info |
-
 Stored in:
-
+```
 server/data_task_medium.jsonl
-
+```
 
 Each sample contains:
-- red_flag_categories
-- green_flag_categories
+- `red_flag_categories`
+- `green_flag_categories`
 
 These are used internally to compute signal scores and are never exposed to the agent.
 
-To extend the dataset, add entries to the _DATASET list in:
-
+To extend the dataset, add entries to the `_DATASET` list in:
+```
 server/job_scam_env_environment.py
-
+```
 
 ---
 
 ### Hard dataset
-
 Stored in:
 
+```
 server/data_task_hard.jsonl
-
+```
 
 Each hard sample contains:
-- episode_id
-- difficulty
-- query_type
-- initial_signal
-- environment_state with task-specific context fields
-- ground_truth and reward_logic used by the hard task grader and reward engine
+- `episode_id`
+- `difficulty`
+- `query_type`
+- `initial_signal`
+- `environment_state with task-specific context fields`
+- `ground_truth and reward_logic used by the hard task grader and reward engine`
 
 Hard samples are used by the hard task implementation and are never exposed directly to the agent.
-
----
-
-## Project structure
-
-
-job_scam_env/
-├── server/
-│   ├── app.py
-│   └── job_scam_env_environment.py
-├── client.py
-├── models.py
-├── inference.py
-├── Dockerfile
-├── openenv.yaml
-└── pyproject.toml
-
 
 ---
 
@@ -364,6 +292,6 @@ job_scam_env/
 
 | Variable | Description |
 |---|---|
-| API_BASE_URL | OpenAI-compatible API endpoint |
-| MODEL_NAME | Model identifier |
-| HF_TOKEN / API_KEY | Authentication key |
+| `API_BASE_URL` | OpenAI-compatible API endpoint |
+| `MODEL_NAME` | Model identifier |
+| `HF_TOKEN` / `API_KEY` | Authentication key |
