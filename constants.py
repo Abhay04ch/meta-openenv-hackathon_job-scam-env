@@ -91,7 +91,7 @@ MEDIUM_ALL_CONTEXT_FIELDS: List[str] = list(MEDIUM_ACTION_TO_FIELD.values())
 # HARD TASK constants
 # ===========================================================================
 HARD_MAX_STEPS: int = 8
-HARD_TIMEOUT_PENALTY: float = -1.0
+HARD_TIMEOUT_PENALTY: float = 0.0
 HARD_DATASET_FILENAME: str = "data_task_hard.jsonl"
 
 # HARD_REWARD_MATRIX: Dict[str, Dict[str, float]] = {}

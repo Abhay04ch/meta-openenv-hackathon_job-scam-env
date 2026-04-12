@@ -90,10 +90,10 @@ def log_end(
     )
 
 def normalize_one(x):
-    return int(x) if float(x) == 1.0 else x
+    return 0.9999 if float(x) >= 1.0 else x
 
 def normalize_zero(x):
-    return int(x) if float(x) == 0.0 else x
+    return 0.0001 if float(x) <= 0.0 else x
 
 # ---------------------------------------------------------------------------
 # System prompts (per task)
