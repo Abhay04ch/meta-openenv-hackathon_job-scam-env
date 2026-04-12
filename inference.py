@@ -496,8 +496,8 @@ async def run_episode(
                 break
             elif task_name == "hard":
                 normalised_reward = reward
+                normalised_reward = normalize_one(normalize_zero(normalised_reward))
                 info = obs.info or {}
-
                 if obs.reason == "timeout":
                     success = False
                     print(f"\n  HARD TIMEOUT")
@@ -505,19 +505,15 @@ async def run_episode(
                 else:
                     correct = obs.predicted_label == obs.actual_label
                     success = bool(correct)
-
                     print(f"\n  HARD CLASSIFICATION RESULT")
                     print(f"    Step reward : {normalised_reward}")
                     print(f"    Predicted   : {obs.predicted_label}")
                     print(f"    Actual      : {obs.actual_label}")
                     print(f"    Correct     : {correct}")
-
                     if info.get("reward_breakdown"):
                         print(f"    Breakdown   : {info['reward_breakdown']}")
-
                     if info.get("grading"):
                         print(f"    Grading     : {info['grading']}")
-
                     if info.get("cumulative"):
                         print(f"    Cumulative  : {info['cumulative']}")
 
